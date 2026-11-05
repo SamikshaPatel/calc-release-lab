@@ -1,0 +1,8 @@
+# Default: every change needs the reviewer / QA lead
+*               @samiksha235
+
+# Pipeline changes: release manager or QA lead
+/.github/       @SamikshaPatel @samiksha235
+
+# Automation code is written by the QA account, so the release manager reviews it
+/automation/    @SamikshaPatel
