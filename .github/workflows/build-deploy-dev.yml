@@ -1,0 +1,107 @@
+name: Build and deploy DEV
+
+on:
+  push:
+    branches: [develop]
+  workflow_dispatch:
+
+env:
+  APP_NAME: calc-release-lab
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      artifact: ${{ steps.meta.outputs.artifact }}
+      short_sha: ${{ steps.meta.outputs.short_sha }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Compute build version
+        id: meta
+        run: |
+          BASE=$(node -p "require('./package.json').version")
+          SHORT_SHA=${GITHUB_SHA::7}
+          VERSION="${BASE}-dev.${GITHUB_RUN_NUMBER}+${SHORT_SHA}"
+          ARTIFACT="${APP_NAME}-${BASE}-dev.${GITHUB_RUN_NUMBER}-${SHORT_SHA}"
+          echo "version=${VERSION}"    >> "$GITHUB_OUTPUT"
+          echo "artifact=${ARTIFACT}"  >> "$GITHUB_OUTPUT"
+          echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "Build version: ${VERSION}"
+
+      - run: npm ci
+      - run: npm run lint
+
+      - name: Build
+        run: npm run build
+        env:
+          VITE_APP_VERSION: ${{ steps.meta.outputs.version }}
+          VITE_COMMIT_SHA: ${{ steps.meta.outputs.short_sha }}
+
+      - name: Write version.json into the build
+        run: |
+          cat > dist/version.json <<EOF
+          {
+            "app": "${APP_NAME}",
+            "version": "${{ steps.meta.outputs.version }}",
+            "commit": "${GITHUB_SHA}",
+            "buildNumber": "${GITHUB_RUN_NUMBER}",
+            "builtAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }
+          EOF
+
+      - name: Save build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.meta.outputs.artifact }}
+          path: dist
+          retention-days: 30
+
+  deploy-dev:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: dev
+      url: https://calc-release-lab-dev.pages.dev
+    steps:
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build.outputs.artifact }}
+          path: dist
+
+      - name: Deploy to Cloudflare Pages (DEV)
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy dist --project-name=calc-release-lab-dev --branch=main --commit-hash=${{ github.sha }}
+
+      - name: Verify DEV is serving this build
+        run: |
+          for i in $(seq 1 10); do
+            LIVE=$(curl -s https://calc-release-lab-dev.pages.dev/version.json | grep -o '"commit": *"[a-f0-9]*"' | grep -o '[a-f0-9]\{40\}' || true)
+            if [ "$LIVE" = "${GITHUB_SHA}" ]; then
+              echo "DEV is serving ${{ needs.build.outputs.version }}"
+              exit 0
+            fi
+            echo "Attempt $i: DEV shows '${LIVE}', waiting..."
+            sleep 6
+          done
+          echo "DEV is not serving commit ${GITHUB_SHA}"
+          exit 1
+
+      - name: Deployment summary
+        run: |
+          echo "### Deployed to DEV" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Item | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| --- | --- |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Version | ${{ needs.build.outputs.version }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Artifact | ${{ needs.build.outputs.artifact }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| URL | https://calc-release-lab-dev.pages.dev |" >> "$GITHUB_STEP_SUMMARY"
