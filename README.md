@@ -88,3 +88,5 @@ export default defineConfig([
 | STAGING / UAT | https://calc-release-lab-staging.pages.dev | Gate 1: QA lead |
 | PROD | https://calc-release-lab-prod.pages.dev | Gate 2: release manager |
 
+
+**Merge rule:** the PR author merges after approval. Only the release manager merges into `main`.
