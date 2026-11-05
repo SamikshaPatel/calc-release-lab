@@ -71,5 +71,20 @@ export default defineConfig([
     },
   },
 ])
-
 ```
+## Team roles (simulated)
+
+| Account        | Role | Opens PRs | Approves PRs | Triggers | Approves |
+|----------------| --- | --- | --- | --- | --- |
+| @SamikshaPatel | Devs, release manager | Yes | — | Deploy to QA, promote to staging | Prod (gate 2) |
+| @Samiksha235   | Reviewer, QA lead | Automation PRs | Yes (CODEOWNERS) | Promote to prod after UAT | Staging (gate 1) |
+
+## Environments
+
+| Environment | URL | Approval |
+| --- | --- | --- |
+| DEV | https://calc-release-lab-dev.pages.dev | None (auto on merge to develop) |
+| QA | https://calc-release-lab-qa.pages.dev | None (deploy on demand) |
+| STAGING / UAT | https://calc-release-lab-staging.pages.dev | Gate 1: QA lead |
+| PROD | https://calc-release-lab-prod.pages.dev | Gate 2: release manager |
+
