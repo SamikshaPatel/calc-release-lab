@@ -1,0 +1,132 @@
+name: Promote to Prod
+
+on:
+  workflow_dispatch:
+    inputs:
+      uat_signoff:
+        description: "UAT sign-off reference (who/when)"
+        required: true
+        default: ""
+      rollback:
+        description: "Rollback: redeploy an older release tag (skips the staging check)"
+        type: boolean
+        default: false
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: promote-prod
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Gate checks (tag, build, staging)
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.check.outputs.tag }}
+      sha: ${{ steps.check.outputs.sha }}
+      short_sha: ${{ steps.check.outputs.short_sha }}
+      run_id: ${{ steps.check.outputs.run_id }}
+    steps:
+      - name: Check tag, DEV build and staging build
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ROLLBACK: ${{ inputs.rollback }}
+        run: |
+          # 1. Must run from a release tag (RC, or a final tag for rollback)
+          if [[ ! "$GITHUB_REF" =~ ^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]]; then
+            echo "::error::Run this from a release tag (e.g. v1.0.0-rc.1). You ran it from ${GITHUB_REF}."
+            exit 1
+          fi
+          TAG="${GITHUB_REF#refs/tags/}"
+          SHA="${GITHUB_SHA}"
+
+          # 2. A successful DEV build must exist for this commit
+          RUN_ID=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/build-deploy-dev.yml/runs?head_sha=${SHA}&status=success&per_page=1" --jq '.workflow_runs[0].id // empty')
+          if [ -z "$RUN_ID" ]; then
+            echo "::error::No DEV build artifact found for ${SHA} (it may have expired after 30 days)."
+            exit 1
+          fi
+
+          # 3. Normal release: staging must be serving this exact commit (UAT passed on it)
+          if [ "$ROLLBACK" != "true" ]; then
+            STG_SHA=$(curl -s https://calc-release-lab-staging.pages.dev/version.json | grep -o '[a-f0-9]\{40\}' | head -1 || true)
+            if [ "$STG_SHA" != "$SHA" ]; then
+              echo "::error::Staging is serving ${STG_SHA:-nothing}, but ${TAG} points to ${SHA}. Promote it to staging and complete UAT first."
+              exit 1
+            fi
+          else
+            echo "::warning::ROLLBACK requested: staging check skipped for ${TAG}."
+          fi
+
+          echo "tag=${TAG}"           >> "$GITHUB_OUTPUT"
+          echo "sha=${SHA}"           >> "$GITHUB_OUTPUT"
+          echo "short_sha=${SHA::7}"  >> "$GITHUB_OUTPUT"
+          echo "run_id=${RUN_ID}"     >> "$GITHUB_OUTPUT"
+
+  deploy-prod:
+    name: Deploy to Prod (gate 2)
+    needs: validate
+    runs-on: ubuntu-latest
+    environment:
+      name: prod
+      url: https://calc-release-lab-prod.pages.dev
+    steps:
+      - name: Download the DEV build artifact (no rebuild)
+        uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ needs.validate.outputs.run_id }}
+          github-token: ${{ github.token }}
+          pattern: calc-release-lab-*-${{ needs.validate.outputs.short_sha }}
+          merge-multiple: true
+          path: dist
+
+      - name: Read build version
+        id: ver
+        run: echo "version=$(node -p "require('./dist/version.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy to Cloudflare Pages (Prod)
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy dist --project-name=${{ vars.PAGES_PROJECT }} --branch=main --commit-hash=${{ needs.validate.outputs.sha }}
+
+      - name: Verify Prod is serving this build (smoke)
+        env:
+          EXPECTED: ${{ needs.validate.outputs.sha }}
+          URL: https://${{ vars.PAGES_PROJECT }}.pages.dev
+        run: |
+          for i in $(seq 1 10); do
+            LIVE=$(curl -s "${URL}/version.json" | grep -o '[a-f0-9]\{40\}' | head -1 || true)
+            if [ "$LIVE" = "$EXPECTED" ]; then
+              echo "Prod is serving ${EXPECTED}"
+              exit 0
+            fi
+            echo "Attempt $i: Prod shows '${LIVE}', waiting..."
+            sleep 6
+          done
+          echo "::error::Prod is not serving ${EXPECTED}. Consider a rollback."
+          exit 1
+
+      # Prod smoke tests (AQA) will be added here
+
+      - name: Release summary
+        env:
+          UAT: ${{ inputs.uat_signoff }}
+        run: |
+          {
+            echo "### Released to Prod"
+            echo "| Item | Value |"
+            echo "| --- | --- |"
+            echo "| Tag | ${{ needs.validate.outputs.tag }} |"
+            echo "| Build version | ${{ steps.ver.outputs.version }} |"
+            echo "| Commit | ${{ needs.validate.outputs.sha }} |"
+            echo "| Rollback | ${{ inputs.rollback }} |"
+            echo "| Requested by | ${{ github.triggering_actor }} |"
+            echo "| UAT sign-off | ${UAT} |"
+            echo "| URL | https://${{ vars.PAGES_PROJECT }}.pages.dev |"
+          } >> "$GITHUB_STEP_SUMMARY"
