@@ -67,3 +67,19 @@ test.describe('CALC-8: UI to API end to end', () => {
     await expect(calc.display).toHaveText('Unexpected response from server')
   })
 })
+
+test.describe('CALC-9: decimal precision on screen', () => {
+  const cases = [
+    { keys: ['0', 'decimal', '1', 'add', '0', 'decimal', '2', 'equals'], expected: '0.3' },
+    { keys: ['1', 'divide', '3', 'equals'], expected: '0.3333333333' },
+    { keys: ['1', 'decimal', '1', 'multiply', '1', 'decimal', '1', 'equals'], expected: '1.21' },
+  ]
+  for (const c of cases) {
+    test(`${c.keys.join(' ')} → ${c.expected}`, async ({ page }) => {
+      const calc = new CalculatorPage(page)
+      await calc.goto()
+      await calc.press(...c.keys)
+      await expect(calc.display).toHaveText(c.expected)
+    })
+  }
+})

@@ -39,9 +39,7 @@ test.describe('CALC-2: add and subtract', () => {
     expect((await res.json()).code).toBe('INVALID_JSON')
   })
 
-  test('KNOWN ISSUE CALC-9: 0.1 + 0.2 should equal 0.3', async ({ request }) => {
-    test.info().annotations.push({ type: 'issue', description: 'CALC-9 decimal precision' })
-    test.fail() // expected to fail until CALC-9 ships; Playwright alerts us when it starts passing
+  test('CALC-9: 0.1 + 0.2 equals 0.3 @smoke', async ({ request }) => {
     const res = await calc(request, { a: 0.1, b: 0.2, op: 'add' })
     expect((await res.json()).result).toBe(0.3)
   })
