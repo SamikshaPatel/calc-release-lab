@@ -52,3 +52,27 @@ test.describe('CALC-2: add and subtract', () => {
     expect((await res.json()).result).toBe(0.3)
   })
 })
+
+test.describe('CALC-4: multiply and divide', () => {
+  const cases = [
+    { name: 'multiplies', a: 4, b: 3, op: 'multiply', result: 12 },
+    { name: 'multiplies negative by decimal', a: -4, b: 2.5, op: 'multiply', result: -10 },
+    { name: 'divides', a: 12, b: 4, op: 'divide', result: 3 },
+    { name: 'divides to a negative decimal', a: -9, b: 2, op: 'divide', result: -4.5 },
+  ]
+  for (const c of cases) {
+    test(c.name, async ({ request }) => {
+      const res = await request.post('/api/calculate', { data: { a: c.a, b: c.b, op: c.op } })
+      expect(res.status()).toBe(200)
+      expect((await res.json()).result).toBe(c.result)
+    })
+  }
+
+  for (const a of [5, 0]) {
+    test(`BUG CALC-16: ${a} / 0 returns 400 DIVIDE_BY_ZERO @smoke`, async ({ request }) => {
+      const res = await request.post('/api/calculate', { data: { a, b: 0, op: 'divide' } })
+      expect(res.status()).toBe(400)
+      expect((await res.json()).code).toBe('DIVIDE_BY_ZERO')
+    })
+  }
+})
