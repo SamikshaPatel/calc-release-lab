@@ -18,4 +18,8 @@ export class CalculatorPage {
   key(id: string) {
     return this.page.getByTestId(`key-${id}`)
   }
+
+  async press(...ids: string[]) {
+    for (const id of ids) await this.key(id).click()
+  }
 }
