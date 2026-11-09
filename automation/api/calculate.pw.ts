@@ -30,12 +30,6 @@ test.describe('CALC-2: add and subtract', () => {
     expect((await res.json()).code).toBe('UNSUPPORTED_OPERATION')
   })
 
-  test('rejects non-numeric input', async ({ request }) => {
-    const res = await calc(request, { a: '1', b: 2, op: 'add' })
-    expect(res.status()).toBe(400)
-    expect((await res.json()).code).toBe('INVALID_INPUT')
-  })
-
   test('rejects invalid JSON', async ({ request }) => {
     const res = await request.post('/api/calculate', {
       headers: { 'content-type': 'application/json' },
@@ -73,6 +67,30 @@ test.describe('CALC-4: multiply and divide', () => {
       const res = await request.post('/api/calculate', { data: { a, b: 0, op: 'divide' } })
       expect(res.status()).toBe(400)
       expect((await res.json()).code).toBe('DIVIDE_BY_ZERO')
+    })
+  }
+})
+
+test.describe('CALC-5: input validation', () => {
+  const invalid = [
+    { name: 'non-object body (string)', body: Buffer.from('"hello"'), status: 422, code: 'INVALID_BODY' },
+    { name: 'non-object body (array)', body: Buffer.from('[1,2]'), status: 422, code: 'INVALID_BODY' },
+    { name: 'missing b and op', body: { a: 1 }, status: 422, code: 'MISSING_FIELD' },
+    { name: 'string number', body: { a: '5', b: 2, op: 'add' }, status: 422, code: 'INVALID_NUMBER' },
+    { name: 'non-numeric b', body: { a: 5, b: 'x', op: 'add' }, status: 422, code: 'INVALID_NUMBER' },
+    { name: 'unsupported op', body: { a: 1, b: 2, op: 'power' }, status: 400, code: 'UNSUPPORTED_OPERATION' },
+  ]
+
+  for (const c of invalid) {
+    test(`${c.name} → ${c.status} ${c.code}`, async ({ request }) => {
+      const res = await request.post('/api/calculate', {
+        headers: { 'content-type': 'application/json' },
+        data: c.body,
+      })
+      expect(res.status()).toBe(c.status)
+      const body = await res.json()
+      expect(body.code).toBe(c.code)
+      expect(typeof body.message).toBe('string') // one error format: {code, message}
     })
   }
 })
