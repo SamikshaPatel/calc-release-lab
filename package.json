@@ -9,7 +9,9 @@
     "lint": "eslint .",
     "test": "vitest run",
     "preview": "vite preview",
-    "build:api": "wrangler pages functions build --outdir=dist/_worker.js"
+    "build:api": "wrangler pages functions build --outdir=dist/_worker.js",
+    "test:api": "playwright test --project=api",
+    "test:smoke": "playwright test --grep @smoke"
   },
   "dependencies": {
     "react": "^19.3.1",
@@ -17,6 +19,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.65.0",
     "@types/node": "^24.19.2",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
