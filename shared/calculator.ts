@@ -15,7 +15,19 @@ export function isOperation(value: unknown): value is Operation {
   return typeof value === 'string' && (SUPPORTED_OPERATIONS as readonly string[]).includes(value)
 }
 
+export const DECIMAL_PLACES = 10
+
+/** Round to 10 decimal places so binary floating-point noise never reaches users (CALC-9). */
+export function roundResult(value: number): number {
+  if (!Number.isFinite(value) || Math.abs(value) >= 1e21) return value
+  return Number(value.toFixed(DECIMAL_PLACES))
+}
+
 export function calculate(a: number, b: number, op: Operation): number {
+  return roundResult(rawCalculate(a, b, op))
+}
+
+function rawCalculate(a: number, b: number, op: Operation): number {
   switch (op) {
     case 'add':
       return a + b
