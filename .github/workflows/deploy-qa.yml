@@ -95,7 +95,6 @@ jobs:
           echo "::error::QA is not serving ${EXPECTED}"
           exit 1
 
-      # Smoke tests (S0-07 / AUT-103) will be added here by the automation team
 
       - name: Deployment summary
         env:
@@ -111,3 +110,43 @@ jobs:
             echo "| Deployed by | ${{ github.actor }} |"
             echo "| URL | https://${{ vars.PAGES_PROJECT }}.pages.dev |"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  smoke-qa:
+    name: Smoke tests on QA
+    needs: [resolve, deploy-qa]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+
+      - name: Check this build has automation
+        id: has
+        run: |
+          if [ -f playwright.config.ts ]; then echo "run=true" >> "$GITHUB_OUTPUT"; else echo "run=false" >> "$GITHUB_OUTPUT"; echo "::notice::No automation in this build; smoke skipped."; fi
+
+      - uses: actions/setup-node@v4
+        if: steps.has.outputs.run == 'true'
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+        if: steps.has.outputs.run == 'true'
+
+      - name: Run @smoke against QA
+        if: steps.has.outputs.run == 'true'
+        run: npm run test:smoke
+        env:
+          CI: true
+          BASE_URL: https://calc-release-lab-qa.pages.dev
+          EXPECTED_ENV: qa
+          EXPECTED_COMMIT: ${{ needs.resolve.outputs.sha }}
+
+      - name: Save test report
+        if: always() && steps.has.outputs.run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-smoke-report-${{ needs.resolve.outputs.short_sha }}
+          path: playwright-report
+          retention-days: 14
