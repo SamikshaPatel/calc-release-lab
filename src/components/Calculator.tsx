@@ -1,21 +1,22 @@
-import { useState } from 'react'
+import { useReducer } from 'react'
 import Display from './Display'
 import Keypad from './Keypad'
-import { inputDigit, inputDecimal } from '../logic/entry'
+import { calcReducer, initialState } from '../logic/calculator-state'
 import './calculator.css'
 
 export default function Calculator() {
-  const [display, setDisplay] = useState('0')
+  const [state, dispatch] = useReducer(calcReducer, initialState)
 
   const handleKey = (id: string) => {
-    if (/^\d$/.test(id)) setDisplay((d) => inputDigit(d, id))
-    else if (id === 'decimal') setDisplay(inputDecimal)
-    // operators, equals and clear arrive in CALC-7 and CALC-8
+    if (/^\d$/.test(id)) dispatch({ type: 'digit', digit: id })
+    else if (id === 'decimal') dispatch({ type: 'decimal' })
+    else if (id === 'clear') dispatch({ type: 'clear' })
+    // operators and equals arrive in CALC-8
   }
 
   return (
     <section className="calculator" aria-label="Calculator">
-      <Display value={display} />
+      <Display value={state.display} />
       <Keypad onKey={handleKey} />
     </section>
   )

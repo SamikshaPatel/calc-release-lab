@@ -52,9 +52,31 @@ describe('Number entry on screen (CALC-6)', () => {
     expect(screen.getByTestId('display').textContent).toBe('1.5')
   })
 
-  it('operator keys do not change the display yet', () => {
+  it('operator and equals keys do not change the display yet', () => {
     render(<Calculator />)
-    click('4', 'add', 'equals', 'clear')
+    click('4', 'add', 'equals')
     expect(screen.getByTestId('display').textContent).toBe('4')
+  })
+})
+
+describe('Clear key on screen (CALC-7)', () => {
+  const click = (...ids: string[]) => ids.forEach((id) => fireEvent.click(screen.getByTestId(`key-${id}`)))
+
+  it('C resets the display to 0', () => {
+    render(<Calculator />)
+    click('1', '2', 'clear')
+    expect(screen.getByTestId('display').textContent).toBe('0')
+  })
+
+  it('typing after C starts a new number', () => {
+    render(<Calculator />)
+    click('1', '2', 'clear', '3')
+    expect(screen.getByTestId('display').textContent).toBe('3')
+  })
+
+  it('C also clears a decimal entry', () => {
+    render(<Calculator />)
+    click('1', 'decimal', '5', 'clear', 'decimal', '2')
+    expect(screen.getByTestId('display').textContent).toBe('0.2')
   })
 })
