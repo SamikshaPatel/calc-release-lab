@@ -9,6 +9,11 @@ describe('calculate', () => {
     [5, 3, 'subtract', 2],
     [3, 5, 'subtract', -2],
     [-2.5, -2.5, 'subtract', 0],
+    [4, 3, 'multiply', 12],
+    [-4, 2.5, 'multiply', -10],
+    [7, 0, 'multiply', 0],
+    [12, 4, 'divide', 3],
+    [-9, 2, 'divide', -4.5],
   ] as const)('%d %s %d', (a, b, op, expected) => {
     expect(calculate(a, b, op)).toBe(expected)
   })
@@ -16,11 +21,10 @@ describe('calculate', () => {
 
 describe('isOperation', () => {
   it('accepts supported operations', () => {
-    expect(isOperation('add')).toBe(true)
-    expect(isOperation('subtract')).toBe(true)
+    for (const op of ['add', 'subtract', 'multiply', 'divide']) expect(isOperation(op)).toBe(true)
   })
   it('rejects anything else', () => {
-    expect(isOperation('multiply')).toBe(false)
+    expect(isOperation('power')).toBe(false)
     expect(isOperation(undefined)).toBe(false)
     expect(isOperation(42)).toBe(false)
   })
