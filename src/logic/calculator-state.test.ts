@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { calcReducer, initialState, type CalcState } from './calculator-state'
 
-const pending: CalcState = { display: '12', previous: '5', operator: 'add', lastAction: 'digit' }
+const pending: CalcState = { ...initialState, display: '12', previous: '5', operator: 'add', lastAction: 'digit' }
 
 describe('Clear and All Clear (CALC-7)', () => {
   it('C clears the current entry but keeps the pending operation', () => {
