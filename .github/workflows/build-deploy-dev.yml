@@ -1,8 +1,8 @@
-name: Build and deploy DEV
+name: Build (DEV and release candidates)
 
 on:
   push:
-    branches: [develop]
+    branches: [develop, 'release/**']
   workflow_dispatch:
 
 env:
@@ -15,8 +15,11 @@ jobs:
       version: ${{ steps.meta.outputs.version }}
       artifact: ${{ steps.meta.outputs.artifact }}
       short_sha: ${{ steps.meta.outputs.short_sha }}
+      kind: ${{ steps.meta.outputs.kind }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # needed to count commits on release branches
 
       - uses: actions/setup-node@v4
         with:
@@ -26,17 +29,37 @@ jobs:
       - name: Compute build version
         id: meta
         run: |
-          BASE=$(node -p "require('./package.json').version")
           SHORT_SHA=${GITHUB_SHA::7}
-          VERSION="${BASE}-dev.${GITHUB_RUN_NUMBER}+${SHORT_SHA}"
-          ARTIFACT="${APP_NAME}-${BASE}-dev.${GITHUB_RUN_NUMBER}-${SHORT_SHA}"
-          echo "version=${VERSION}"    >> "$GITHUB_OUTPUT"
-          echo "artifact=${ARTIFACT}"  >> "$GITHUB_OUTPUT"
-          echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
-          echo "Build version: ${VERSION}"
+          if [[ "$GITHUB_REF" == refs/heads/release/* ]]; then
+            REL="${GITHUB_REF#refs/heads/release/}"          # e.g. 1.0
+            if [[ ! "$REL" =~ ^[0-9]+\.[0-9]+$ ]]; then
+              echo "::error::Release branches must be named release/<major>.<minor>, e.g. release/1.0"
+              exit 1
+            fi
+            BASE="${REL}.0"
+            git fetch origin develop --quiet
+            MERGE_BASE=$(git merge-base HEAD origin/develop)
+            N=$(( $(git rev-list --count "${MERGE_BASE}..HEAD") + 1 ))
+            VERSION="${BASE}-rc.${N}+${SHORT_SHA}"
+            ARTIFACT="${APP_NAME}-${BASE}-rc.${N}-${SHORT_SHA}"
+            KIND=release
+          else
+            BASE=$(node -p "require('./package.json').version")
+            VERSION="${BASE}-dev.${GITHUB_RUN_NUMBER}+${SHORT_SHA}"
+            ARTIFACT="${APP_NAME}-${BASE}-dev.${GITHUB_RUN_NUMBER}-${SHORT_SHA}"
+            KIND=dev
+          fi
+          {
+            echo "version=${VERSION}"
+            echo "artifact=${ARTIFACT}"
+            echo "short_sha=${SHORT_SHA}"
+            echo "kind=${KIND}"
+          } >> "$GITHUB_OUTPUT"
+          echo "Build version: ${VERSION} (${KIND})"
 
       - run: npm ci
       - run: npm run lint
+      - run: npm test
 
       - name: Build
         run: npm run build
@@ -46,7 +69,7 @@ jobs:
 
       - name: Write version.json into the build
         run: |
-          cat > dist/version.json <<EOF
+          cat > dist/version.json <<JSON
           {
             "app": "${APP_NAME}",
             "version": "${{ steps.meta.outputs.version }}",
@@ -54,8 +77,8 @@ jobs:
             "buildNumber": "${GITHUB_RUN_NUMBER}",
             "builtAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           }
-          EOF
-          
+          JSON
+
       - name: Bundle API functions into the build
         run: npm run build:api
 
@@ -66,8 +89,21 @@ jobs:
           path: dist
           retention-days: 30
 
+      - name: Release candidate summary
+        if: steps.meta.outputs.kind == 'release'
+        run: |
+          {
+            echo "### Release candidate built (not deployed)"
+            echo "| Item | Value |"
+            echo "| --- | --- |"
+            echo "| Version | ${{ steps.meta.outputs.version }} |"
+            echo "| Commit | ${GITHUB_SHA} |"
+            echo "| Next step | Deploy to QA with this commit SHA for retest |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
   deploy-dev:
     needs: build
+    if: github.ref == 'refs/heads/develop'
     runs-on: ubuntu-latest
     environment:
       name: dev
@@ -89,7 +125,7 @@ jobs:
       - name: Verify DEV is serving this build
         run: |
           for i in $(seq 1 10); do
-            LIVE=$(curl -s https://calc-release-lab-dev.pages.dev/api/health | grep -o '"commit": *"[a-f0-9]*"' | grep -o '[a-f0-9]\{40\}' || true)
+            LIVE=$(curl -s https://calc-release-lab-dev.pages.dev/api/health | grep -o '[a-f0-9]\{40\}' | head -1 || true)
             if [ "$LIVE" = "${GITHUB_SHA}" ]; then
               echo "DEV is serving ${{ needs.build.outputs.version }}"
               exit 0
@@ -97,14 +133,16 @@ jobs:
             echo "Attempt $i: DEV shows '${LIVE}', waiting..."
             sleep 6
           done
-          echo "DEV is not serving commit ${GITHUB_SHA}"
+          echo "::error::DEV is not serving commit ${GITHUB_SHA}"
           exit 1
 
       - name: Deployment summary
         run: |
-          echo "### Deployed to DEV" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Item | Value |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| --- | --- |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Version | ${{ needs.build.outputs.version }} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Artifact | ${{ needs.build.outputs.artifact }} |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| URL | https://calc-release-lab-dev.pages.dev |" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "### Deployed to DEV"
+            echo "| Item | Value |"
+            echo "| --- | --- |"
+            echo "| Version | ${{ needs.build.outputs.version }} |"
+            echo "| Artifact | ${{ needs.build.outputs.artifact }} |"
+            echo "| URL | https://calc-release-lab-dev.pages.dev |"
+          } >> "$GITHUB_STEP_SUMMARY"
