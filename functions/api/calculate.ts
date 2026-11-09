@@ -1,27 +1,21 @@
-import { calculate, isOperation, CalculationError, SUPPORTED_OPERATIONS } from '../../shared/calculator'
-
-type Body = { a?: unknown; b?: unknown; op?: unknown }
+import { calculate, CalculationError } from '../../shared/calculator'
+import { validateCalculateRequest } from '../../shared/validation'
 
 const error = (status: number, code: string, message: string) =>
   Response.json({ code, message }, { status })
 
 export const onRequestPost = async ({ request }: { request: Request }) => {
-  let body: Body
+  let body: unknown
   try {
-    body = (await request.json()) as Body
+    body = await request.json()
   } catch {
     return error(400, 'INVALID_JSON', 'Request body must be valid JSON')
   }
 
-  const { a, b, op } = body ?? {}
+  const check = validateCalculateRequest(body)
+  if (!check.ok) return error(check.status, check.code, check.message)
 
-  if (!isOperation(op)) {
-    return error(400, 'UNSUPPORTED_OPERATION', `op must be one of: ${SUPPORTED_OPERATIONS.join(', ')}`)
-  }
-  if (typeof a !== 'number' || typeof b !== 'number') {
-    return error(400, 'INVALID_INPUT', 'a and b must be numbers')
-  }
-
+  const { a, b, op } = check.value
   try {
     return Response.json({ a, b, op, result: calculate(a, b, op) })
   } catch (e) {

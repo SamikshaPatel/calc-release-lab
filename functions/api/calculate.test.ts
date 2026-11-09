@@ -28,10 +28,10 @@ describe('POST /api/calculate', () => {
     expect((await res.json()).code).toBe('UNSUPPORTED_OPERATION')
   })
 
-  it('rejects non-numeric input', async () => {
+  it('rejects non-numeric input with 422 INVALID_NUMBER', async () => {
     const res = await post({ a: '1', b: 2, op: 'add' })
-    expect(res.status).toBe(400)
-    expect((await res.json()).code).toBe('INVALID_INPUT')
+    expect(res.status).toBe(422)
+    expect((await res.json()).code).toBe('INVALID_NUMBER')
   })
 
   it('rejects invalid JSON', async () => {
@@ -46,5 +46,19 @@ describe('POST /api/calculate - divide by zero (CALC-16)', () => {
     const res = await post({ a: 5, b: 0, op: 'divide' })
     expect(res.status).toBe(400)
     expect((await res.json()).code).toBe('DIVIDE_BY_ZERO')
+  })
+})
+
+describe('POST /api/calculate - validation (CALC-5)', () => {
+  it('rejects a non-object JSON body with 422 INVALID_BODY', async () => {
+    const res = await post('"hello"')
+    expect(res.status).toBe(422)
+    expect((await res.json()).code).toBe('INVALID_BODY')
+  })
+
+  it('rejects missing fields with 422 MISSING_FIELD', async () => {
+    const res = await post({ a: 1 })
+    expect(res.status).toBe(422)
+    expect(await res.json()).toEqual({ code: 'MISSING_FIELD', message: 'Missing field(s): b, op' })
   })
 })
