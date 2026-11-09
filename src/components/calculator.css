@@ -58,3 +58,11 @@
 .display__pending { font-size: 0.9rem; color: #8b93a7; min-height: 1.2em; }
 .display--error output { font-size: 1.1rem; color: #ff8a80; white-space: normal; }
 .display--busy output { opacity: 0.5; }
+
+.build-info {
+  margin-top: -16px;
+  text-align: center;
+  color: #6b7385;
+  font-size: 0.75rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
