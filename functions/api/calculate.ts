@@ -1,4 +1,4 @@
-import { calculate, isOperation, SUPPORTED_OPERATIONS } from '../../shared/calculator'
+import { calculate, isOperation, CalculationError, SUPPORTED_OPERATIONS } from '../../shared/calculator'
 
 type Body = { a?: unknown; b?: unknown; op?: unknown }
 
@@ -22,5 +22,10 @@ export const onRequestPost = async ({ request }: { request: Request }) => {
     return error(400, 'INVALID_INPUT', 'a and b must be numbers')
   }
 
-  return Response.json({ a, b, op, result: calculate(a, b, op) })
+  try {
+    return Response.json({ a, b, op, result: calculate(a, b, op) })
+  } catch (e) {
+    if (e instanceof CalculationError) return error(400, e.code, e.message)
+    throw e
+  }
 }

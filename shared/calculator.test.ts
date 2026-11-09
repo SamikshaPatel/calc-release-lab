@@ -29,3 +29,9 @@ describe('isOperation', () => {
     expect(isOperation(42)).toBe(false)
   })
 })
+
+describe('divide by zero (CALC-16)', () => {
+  it.each([[5, 0], [0, 0], [-3, -0]])('%d / %d throws DIVIDE_BY_ZERO', (a, b) => {
+    expect(() => calculate(a, b, 'divide')).toThrowError(expect.objectContaining({ code: 'DIVIDE_BY_ZERO' }))
+  })
+})
