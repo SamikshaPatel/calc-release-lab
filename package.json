@@ -11,7 +11,8 @@
     "preview": "vite preview",
     "build:api": "wrangler pages functions build --outdir=dist/_worker.js",
     "test:api": "playwright test --project=api",
-    "test:smoke": "playwright test --grep @smoke"
+    "test:smoke": "playwright test --grep @smoke",
+    "test:ui": "playwright test --project=ui --project=ui-mobile"
   },
   "dependencies": {
     "react": "^19.3.1",

@@ -134,6 +134,10 @@ jobs:
       - run: npm ci
         if: steps.has.outputs.run == 'true'
 
+      - name: Install Chromium for UI tests
+        if: steps.has.outputs.run == 'true'
+        run: npx playwright install --with-deps chromium
+
       - name: Run @smoke against QA
         if: steps.has.outputs.run == 'true'
         run: npm run test:smoke
