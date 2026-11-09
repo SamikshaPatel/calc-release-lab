@@ -40,3 +40,11 @@ describe('POST /api/calculate', () => {
     expect((await res.json()).code).toBe('INVALID_JSON')
   })
 })
+
+describe('POST /api/calculate - divide by zero (CALC-16)', () => {
+  it('returns 400 DIVIDE_BY_ZERO', async () => {
+    const res = await post({ a: 5, b: 0, op: 'divide' })
+    expect(res.status).toBe(400)
+    expect((await res.json()).code).toBe('DIVIDE_BY_ZERO')
+  })
+})
