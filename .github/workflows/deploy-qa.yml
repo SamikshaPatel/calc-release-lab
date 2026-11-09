@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       sha:
-        description: "Commit SHA to deploy (blank = latest develop)"
+        description: "Commit SHA or branch to deploy (blank = latest develop; e.g. release/1.0)"
         required: false
         default: ""
       stories:
