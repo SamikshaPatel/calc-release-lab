@@ -1,5 +1,5 @@
-## Story
-CALC-___ <!-- story or bug ID -->
+## Jira
+   CALC-___ <!-- Jira key, e.g. CALC-2 -->
 
 ## What changed
 -
@@ -8,7 +8,7 @@ CALC-___ <!-- story or bug ID -->
 1.
 
 ## Checklist
-- [ ] Title starts with the story ID (e.g. `CALC-104: add keypad grid`)
+- [ ] Title starts with the Jira key (e.g. `CALC-2: add calculate endpoint`)
 - [ ] Unit tests added or updated
 - [ ] Lint, tests and build pass locally (`npm run lint && npm test && npm run build`)
 - [ ] No unrelated changes in this PR
