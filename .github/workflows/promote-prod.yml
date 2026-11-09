@@ -101,7 +101,7 @@ jobs:
           URL: https://${{ vars.PAGES_PROJECT }}.pages.dev
         run: |
           for i in $(seq 1 10); do
-            LIVE=$(curl -s "${URL}/version.json" | grep -o '[a-f0-9]\{40\}' | head -1 || true)
+            LIVE=$(curl -s "${URL}/api/health" | grep -o '[a-f0-9]\{40\}' | head -1 || true)
             if [ "$LIVE" = "$EXPECTED" ]; then
               echo "Prod is serving ${EXPECTED}"
               exit 0
