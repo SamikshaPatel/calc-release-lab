@@ -4,10 +4,12 @@ export class CalculatorPage {
   readonly page: Page
   readonly display: Locator
   readonly keys: Locator
+  readonly pending: Locator
 
   constructor(page: Page) {
     this.page = page
     this.display = page.getByTestId('display')
+    this.pending = page.getByTestId('pending')
     this.keys = page.getByRole('region', { name: 'Calculator' }).getByRole('button')
   }
 
