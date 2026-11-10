@@ -51,17 +51,18 @@ jobs:
             exit 1
           fi
 
-          # 3. Normal release: staging must be serving this exact commit (UAT passed on it)
+          # 3. Normal release: this commit must have a verified staging deployment in history (CALC-19)
           if [ "$ROLLBACK" != "true" ]; then
-            STG_SHA=$(curl -s https://calc-release-lab-staging.pages.dev/version.json | grep -o '[a-f0-9]\{40\}' | head -1 || true)
-            if [ "$STG_SHA" != "$SHA" ]; then
-              echo "::error::Staging is serving ${STG_SHA:-nothing}, but ${TAG} points to ${SHA}. Promote it to staging and complete UAT first."
+            VERIFIED=$(gh api "repos/${GITHUB_REPOSITORY}/deployments?environment=staging-verified&sha=${SHA}&per_page=1" --jq '.[0].id // empty')
+            if [ -z "$VERIFIED" ]; then
+              echo "::error::${TAG} (${SHA}) has no verified staging deployment. Promote it to staging and complete UAT first."
               exit 1
             fi
+            echo "Staging verification record found: deployment ${VERIFIED}"
           else
             echo "::warning::ROLLBACK requested: staging check skipped for ${TAG}."
           fi
-
+          
           echo "tag=${TAG}"           >> "$GITHUB_OUTPUT"
           echo "sha=${SHA}"           >> "$GITHUB_OUTPUT"
           echo "short_sha=${SHA::7}"  >> "$GITHUB_OUTPUT"
