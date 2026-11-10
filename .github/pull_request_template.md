@@ -13,3 +13,11 @@
 - [ ] Lint, tests and build pass locally (`npm run lint && npm test && npm run build`)
 - [ ] No unrelated changes in this PR
 - [ ] Automation impact noted (new or changed tests needed?)
+
+## Pipeline / quality-gate impact
+- [ ] None
+- [ ] Changes a gate (what now blocks or passes):
+- [ ] Changes test execution (which suites run where):
+- [ ] New secrets, environments or deployment records:
+
+How QA/SDET verifies (positive + negative):
