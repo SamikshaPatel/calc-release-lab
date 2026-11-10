@@ -71,5 +71,30 @@ export default defineConfig([
     },
   },
 ])
-
 ```
+## Team roles (simulated)
+
+| Account        | Role | Opens PRs | Approves PRs | Triggers | Approves |
+|----------------| --- | --- | --- | --- | --- |
+| @SamikshaPatel | Devs, release manager | Yes | — | Deploy to QA, promote to staging | Prod (gate 2) |
+| @Samiksha235   | Reviewer, QA lead | Automation PRs | Yes (CODEOWNERS) | Promote to prod after UAT | Staging (gate 1) |
+
+## Environments
+
+| Environment | URL | Approval |
+| --- | --- | --- |
+| DEV | https://calc-release-lab-dev.pages.dev | None (auto on merge to develop) |
+| QA | https://calc-release-lab-qa.pages.dev | None (deploy on demand) |
+| STAGING / UAT | https://calc-release-lab-staging.pages.dev | Gate 1: QA lead |
+| PROD | https://calc-release-lab-prod.pages.dev | Gate 2: release manager |
+
+
+**Merge rule:** the PR author merges after approval. Only the release manager merges into `main`.
+
+## Release process
+
+1. QA signs off the build in QA; release manager cuts `release/x.y` from that commit and tags `vx.y.0-rc.1`.
+2. Promote to Staging (gate 1, QA lead approves) → UAT.
+3. UAT defect: fix by PR into `release/x.y` → builds `x.y.0-rc.N` → Deploy to QA with branch `release/x.y` → retest → tag `vx.y.0-rc.N` → promote again.
+4. Promote to Prod (gate 2, release manager approves) → publish `vx.y.0`.
+5. Back-merge `release/x.y` into `develop` by PR; merge into `main`.

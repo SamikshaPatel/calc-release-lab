@@ -1,0 +1,123 @@
+name: Promote to Staging
+
+on:
+  workflow_dispatch:
+    inputs:
+      notes:
+        description: "Release notes / QA sign-off reference"
+        required: false
+        default: ""
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: promote-staging
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Gate checks (tag, build, QA sign-off)
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.check.outputs.tag }}
+      sha: ${{ steps.check.outputs.sha }}
+      short_sha: ${{ steps.check.outputs.short_sha }}
+      run_id: ${{ steps.check.outputs.run_id }}
+    steps:
+      - name: Check tag, DEV build and QA build
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # 1. Must run from a release-candidate tag like v1.0.0-rc.1
+          if [[ ! "$GITHUB_REF" =~ ^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$ ]]; then
+            echo "::error::Run this from a release-candidate tag (e.g. v1.0.0-rc.1). You ran it from ${GITHUB_REF}."
+            exit 1
+          fi
+          TAG="${GITHUB_REF#refs/tags/}"
+          SHA="${GITHUB_SHA}"
+
+          # 2. A successful DEV build must exist for this commit
+          RUN_ID=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/build-deploy-dev.yml/runs?head_sha=${SHA}&status=success&per_page=1" --jq '.workflow_runs[0].id // empty')
+          if [ -z "$RUN_ID" ]; then
+            echo "::error::No successful DEV build for ${SHA}. Only commits built on develop can be promoted."
+            exit 1
+          fi
+
+          # 3. QA must be serving this exact commit (the build QA signed off)
+          QA_SHA=$(curl -s https://calc-release-lab-qa.pages.dev/version.json | grep -o '[a-f0-9]\{40\}' | head -1 || true)
+          if [ "$QA_SHA" != "$SHA" ]; then
+            echo "::error::QA is serving ${QA_SHA:-nothing}, but ${TAG} points to ${SHA}. Deploy this commit to QA and complete testing first."
+            exit 1
+          fi
+
+          echo "tag=${TAG}"           >> "$GITHUB_OUTPUT"
+          echo "sha=${SHA}"           >> "$GITHUB_OUTPUT"
+          echo "short_sha=${SHA::7}"  >> "$GITHUB_OUTPUT"
+          echo "run_id=${RUN_ID}"     >> "$GITHUB_OUTPUT"
+          echo "All gate checks passed for ${TAG} (${SHA}). Waiting for QA lead approval next."
+
+  deploy-staging:
+    name: Deploy to Staging (gate 1)
+    needs: validate
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+      url: https://calc-release-lab-staging.pages.dev
+    steps:
+      - name: Download the DEV build artifact (no rebuild)
+        uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ needs.validate.outputs.run_id }}
+          github-token: ${{ github.token }}
+          pattern: calc-release-lab-*-${{ needs.validate.outputs.short_sha }}
+          merge-multiple: true
+          path: dist
+
+      - name: Read build version
+        id: ver
+        run: echo "version=$(node -p "require('./dist/version.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy to Cloudflare Pages (Staging)
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy dist --project-name=${{ vars.PAGES_PROJECT }} --branch=main --commit-hash=${{ needs.validate.outputs.sha }}
+
+      - name: Verify Staging is serving this build
+        env:
+          EXPECTED: ${{ needs.validate.outputs.sha }}
+          URL: https://${{ vars.PAGES_PROJECT }}.pages.dev
+        run: |
+          for i in $(seq 1 10); do
+            LIVE=$(curl -s "${URL}/api/health" | grep -o '[a-f0-9]\{40\}' | head -1 || true)
+            if [ "$LIVE" = "$EXPECTED" ]; then
+              echo "Staging is serving ${EXPECTED}"
+              exit 0
+            fi
+            echo "Attempt $i: Staging shows '${LIVE}', waiting..."
+            sleep 6
+          done
+          echo "::error::Staging is not serving ${EXPECTED}"
+          exit 1
+
+      # Full automated regression (AUT-203) will be added here by the automation team
+
+      - name: Promotion summary
+        env:
+          NOTES: ${{ inputs.notes }}
+        run: |
+          {
+            echo "### Promoted to Staging"
+            echo "| Item | Value |"
+            echo "| --- | --- |"
+            echo "| Release candidate | ${{ needs.validate.outputs.tag }} |"
+            echo "| Build version | ${{ steps.ver.outputs.version }} |"
+            echo "| Commit | ${{ needs.validate.outputs.sha }} |"
+            echo "| Requested by | ${{ github.triggering_actor }} |"
+            echo "| Notes | ${NOTES:-none} |"
+            echo "| URL | https://${{ vars.PAGES_PROJECT }}.pages.dev |"
+          } >> "$GITHUB_STEP_SUMMARY"

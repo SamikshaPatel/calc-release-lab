@@ -1,0 +1,156 @@
+name: Deploy to QA
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "Commit SHA or branch to deploy (blank = latest develop; e.g. release/1.0)"
+        required: false
+        default: ""
+      stories:
+        description: "Stories/bugs in this drop (e.g. CALC-101, CALC-102)"
+        required: false
+        default: ""
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: deploy-qa
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    name: Find the DEV build
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.find.outputs.sha }}
+      short_sha: ${{ steps.find.outputs.short_sha }}
+      run_id: ${{ steps.find.outputs.run_id }}
+    steps:
+      - name: Resolve commit and build run
+        id: find
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_SHA: ${{ inputs.sha }}
+        run: |
+          REF="${INPUT_SHA:-develop}"
+          SHA=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${REF}" --jq .sha)
+          RUN_ID=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/build-deploy-dev.yml/runs?head_sha=${SHA}&status=success&per_page=1" --jq '.workflow_runs[0].id // empty')
+          if [ -z "$RUN_ID" ]; then
+            echo "::error::No successful DEV build found for ${SHA}. Wait for 'Build and deploy DEV' to finish, or choose another commit."
+            exit 1
+          fi
+          echo "sha=${SHA}"            >> "$GITHUB_OUTPUT"
+          echo "short_sha=${SHA::7}"   >> "$GITHUB_OUTPUT"
+          echo "run_id=${RUN_ID}"      >> "$GITHUB_OUTPUT"
+          echo "Deploying commit ${SHA} from build run ${RUN_ID}"
+
+  deploy-qa:
+    name: Deploy to QA
+    needs: resolve
+    runs-on: ubuntu-latest
+    environment:
+      name: qa
+      url: https://calc-release-lab-qa.pages.dev
+    steps:
+      - name: Download the DEV build artifact (no rebuild)
+        uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ needs.resolve.outputs.run_id }}
+          github-token: ${{ github.token }}
+          pattern: calc-release-lab-*-${{ needs.resolve.outputs.short_sha }}
+          merge-multiple: true
+          path: dist
+
+      - name: Read build version
+        id: ver
+        run: |
+          VERSION=$(node -p "require('./dist/version.json').version")
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Build version: ${VERSION}"
+
+      - name: Deploy to Cloudflare Pages (QA)
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy dist --project-name=${{ vars.PAGES_PROJECT }} --branch=main --commit-hash=${{ needs.resolve.outputs.sha }}
+
+      - name: Verify QA is serving this build
+        env:
+          EXPECTED: ${{ needs.resolve.outputs.sha }}
+          QA_URL: https://${{ vars.PAGES_PROJECT }}.pages.dev
+        run: |
+          for i in $(seq 1 10); do
+            LIVE=$(curl -s "${QA_URL}/api/health" | grep -o '[a-f0-9]\{40\}' | head -1 || true)
+            if [ "$LIVE" = "$EXPECTED" ]; then
+              echo "QA is serving ${EXPECTED}"
+              exit 0
+            fi
+            echo "Attempt $i: QA shows '${LIVE}', waiting..."
+            sleep 6
+          done
+          echo "::error::QA is not serving ${EXPECTED}"
+          exit 1
+
+
+      - name: Deployment summary
+        env:
+          STORIES: ${{ inputs.stories }}
+        run: |
+          {
+            echo "### Deployed to QA"
+            echo "| Item | Value |"
+            echo "| --- | --- |"
+            echo "| Version | ${{ steps.ver.outputs.version }} |"
+            echo "| Commit | ${{ needs.resolve.outputs.sha }} |"
+            echo "| Stories | ${STORIES:-not specified} |"
+            echo "| Deployed by | ${{ github.actor }} |"
+            echo "| URL | https://${{ vars.PAGES_PROJECT }}.pages.dev |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  smoke-qa:
+    name: Smoke tests on QA
+    needs: [resolve, deploy-qa]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+
+      - name: Check this build has automation
+        id: has
+        run: |
+          if [ -f playwright.config.ts ]; then echo "run=true" >> "$GITHUB_OUTPUT"; else echo "run=false" >> "$GITHUB_OUTPUT"; echo "::notice::No automation in this build; smoke skipped."; fi
+
+      - uses: actions/setup-node@v4
+        if: steps.has.outputs.run == 'true'
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+        if: steps.has.outputs.run == 'true'
+
+      - name: Install Chromium for UI tests
+        if: steps.has.outputs.run == 'true'
+        run: npx playwright install --with-deps chromium
+
+      - name: Run @smoke against QA
+        if: steps.has.outputs.run == 'true'
+        run: npm run test:smoke
+        env:
+          CI: true
+          BASE_URL: https://calc-release-lab-qa.pages.dev
+          EXPECTED_ENV: qa
+          EXPECTED_COMMIT: ${{ needs.resolve.outputs.sha }}
+
+      - name: Save test report
+        if: always() && steps.has.outputs.run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-smoke-report-${{ needs.resolve.outputs.short_sha }}
+          path: playwright-report
+          retention-days: 14
